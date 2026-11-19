@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Simply Supported Beam: Slope and Deflection</title>
+<style>
+  body { font-family: Arial, sans-serif; text-align: center; background: #f7f9fc; }
+  canvas { background: #fff; border: 1px solid #ccc; margin-top: 10px; }
+  select, button { font-size: 16px; margin: 6px; }
+</style>
+</head>
+<body>
+<h2>Slope and Deflection of a Simply Supported Beam</h2>
+<div>
+  Load case:
+  <select id="case">
+    <option value="udl">Uniformly distributed load (w)</option>
+    <option value="point">Central point load (W)</option>
+  </select>
+  <button id="pause">Pause</button>
+</div>
+<canvas id="c" width="900" height="420"></canvas>
+<script>
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const L = 4, EI = 20000;          // m, kN·m²
+const w = 10, W = 40;             // kN/m, kN
+const x0 = 100, x1 = 800, yb = 170, scale = 9000; // pixel mapping, deflection exaggeration
+let t = 0, paused = false;
+document.getElementById('pause').onclick = e => {
+  paused = !paused; e.target.textContent = paused ? 'Play' : 'Pause';
+};
+
+// downward deflection magnitude (m) and slope magnitude (rad)
+function defl(x, kind) {
+  if (kind === 'udl') return w * x * (L**3 - 2*L*x*x + x**3) / (24*EI);
+  const xs = Math.min(x, L - x);   // symmetry
+  return W * xs * (3*L*L - 4*xs*xs) / (48*EI);
+}
+const endSlope = k => k === 'udl' ? w*L**3/(24*EI) : W*L*L/(16*EI);
+const maxDefl  = k => k === 'udl' ? 5*w*L**4/(384*EI) : W*L**3/(48*EI);
+const px = x => x0 + x / L * (x1 - x0);
+
+function draw() {
+  const kind = document.getElementById('case').value;
+  const f = 0.5 - 0.5 * Math.cos(t);         // smooth 0→1→0 load factor
+  ctx.clearRect(0, 0, cv.width, cv.height);
+
+  // loads
+  ctx.strokeStyle = '#d9480f'; ctx.fillStyle = '#d9480f'; ctx.lineWidth = 2;
+  if (kind === 'udl') {
+    for (let i = 0; i <= 14; i++) {
+      const x = x0 + i * (x1 - x0) / 14, h = 50 * Math.max(f, 0.15);
+      ctx.beginPath(); ctx.moveTo(x, yb - 20 - h); ctx.lineTo(x, yb - 22); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x-5, yb-32); ctx.lineTo(x, yb-22); ctx.lineTo(x+5, yb-32); ctx.stroke();
+    }
+    ctx.fillText('w = 10 kN/m', (x0 + x1) / 2 - 35, yb - 90);
+  } else {
+    const xm = (x0 + x1) / 2, h = 70 * Math.max(f, 0.15);
+    ctx.beginPath(); ctx.moveTo(xm, yb - 30 - h); ctx.lineTo(xm, yb - 32 + 8); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(xm-7, yb-18); ctx.lineTo(xm, yb-8+ (-0)); ctx.lineTo(xm+7, yb-18); ctx.stroke();
+    ctx.fillText('W = 40 kN', xm - 28, yb - 115);
+  }
+
+  // original axis
+  ctx.setLineDash([6, 4]); ctx.strokeStyle = '#888'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(x0, yb); ctx.lineTo(x1, yb); ctx.stroke(); ctx.setLineDash([]);
+
+  // deflected beam
+  ctx.strokeStyle = '#1c7ed6'; ctx.lineWidth = 5; ctx.beginPath();
+  for (let i = 0; i <= 120; i++) {
+    const x = i / 120 * L, y = yb + f * scale * defl(x, kind);
+    i ? ctx.lineTo(px(x), y) : ctx.moveTo(px(x), y);
+  }
+  ctx.stroke();
+
+  // supports
+  ctx.fillStyle = '#343a40';
+  ctx.beginPath(); ctx.moveTo(x0, yb+4); ctx.lineTo(x0-16, yb+32); ctx.lineTo(x0+16, yb+32); ctx.fill();
+  ctx.beginPath(); ctx.arc(x1, yb+14, 10, 0, 7); ctx.fill();
+  ctx.fillText('A (pin)', x0 - 20, yb + 50); ctx.fillText('B (roller)', x1 - 25, yb + 50);
+
+  // end tangents (slope)
+  const th = f * scale * endSlope(kind);     // exaggerated slope (dy/dx in pixels per metre-scaled)
+  const ang = Math.atan(th / ((x1 - x0) / L) );
+  ctx.strokeStyle = '#2f9e44'; ctx.lineWidth = 2;
+  [[x0, 1], [x1, -1]].forEach(([x, s]) => {
+    ctx.beginPath(); ctx.moveTo(x, yb);
+    ctx.lineTo(x + s * 70 * Math.cos(ang), yb + 70 * Math.sin(ang)); ctx.stroke();
+  });
+
+  // midspan deflection marker
+  const ym = yb + f * scale * maxDefl(kind), xm = px(L / 2);
+  ctx.strokeStyle = '#c2255c'; ctx.beginPath(); ctx.moveTo(xm, yb); ctx.lineTo(xm, ym); ctx.stroke();
+
+  // readouts
+  ctx.fillStyle = '#212529'; ctx.font = '16px Arial';
+  const s = endSlope(kind) * f, d = maxDefl(kind) * f * 1000;
+  ctx.fillText(`Load factor: ${(f*100).toFixed(0)}%`, 100, 300);
+  ctx.fillText(`End slope |θA| = |θB| = ${s.toFixed(5)} rad  (full load: ${kind==='udl' ? 'wL³/24EI' : 'WL²/16EI'})`, 100, 330);
+  ctx.fillText(`Max deflection at midspan = ${d.toFixed(2)} mm  (full load: ${kind==='udl' ? '5wL⁴/384EI' : 'WL³/48EI'})`, 100, 360);
+  ctx.fillText('Deflection exaggerated for visibility.   Blue: elastic curve   Green: slope tangents   Pink: y_max', 100, 395);
+}
+function loop() { if (!paused) t += 0.02; draw(); requestAnimationFrame(loop); }
+loop();
+</script>
+</body>
+</html>
